@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 
 const MENU_ITEMS = [
   { name: 'Accueil', path: '/', icon: '🏠' },
-  { name: 'Tendances', path: '/tendances', icon: '📈' },
+  { name: 'Store Products', path: '/store-products', icon: '🛍️' },
   { name: 'Test', path: '/test', icon: '🧪' },
   { name: 'Marketing Studio', path: '/marketing-studio', icon: '🎥' },
   { name: 'Mes Projets', path: '/', icon: '📁' }, // Currently active
