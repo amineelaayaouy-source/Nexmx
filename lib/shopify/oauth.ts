@@ -4,8 +4,17 @@ export function getShopifyAuthParams() {
   const apiKey = process.env.SHOPIFY_API_KEY || '';
   const apiSecret = process.env.SHOPIFY_API_SECRET || '';
   const scopes = process.env.SHOPIFY_SCOPES || 'read_products,read_inventory,read_orders,read_customers';
-  const appUrl = process.env.SHOPIFY_APP_URL || process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
-  
+  // NOTE: operator precedence matters here. `a || b ? x : y` parses as `(a || b) ? x : y`,
+  // which silently ignored SHOPIFY_APP_URL and always built the URL from the per-deployment
+  // VERCEL_URL hostname (which changes on every deploy and never matches the callback URL
+  // whitelisted in the Shopify app). Resolve explicitly instead.
+  const appUrl = (
+    process.env.SHOPIFY_APP_URL ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '') ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '') ||
+    'http://localhost:3000'
+  ).replace(/\/+$/, '');
+
   const redirectUri = `${appUrl}/api/shopify/callback`;
 
   return { apiKey, apiSecret, scopes, redirectUri };
@@ -17,7 +26,7 @@ export function generateState(): string {
 
 export function verifyHmac(query: URLSearchParams, apiSecret: string): boolean {
   const hmac = query.get('hmac');
-  if (!hmac) return false;
+  if (!hmac || !apiSecret) return false;
 
   const map = new Map<string, string>();
   query.forEach((value, key) => {
@@ -33,6 +42,9 @@ export function verifyHmac(query: URLSearchParams, apiSecret: string): boolean {
     .createHmac('sha256', apiSecret)
     .update(message)
     .digest('hex');
+
+  // timingSafeEqual throws on length mismatch, which would surface as an unhandled 500
+  if (generatedHash.length !== hmac.length) return false;
 
   // Time-safe string comparison
   return crypto.timingSafeEqual(
