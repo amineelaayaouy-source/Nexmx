@@ -4,7 +4,7 @@ export function getShopifyAuthParams() {
   const apiKey = process.env.SHOPIFY_API_KEY || '';
   const apiSecret = process.env.SHOPIFY_API_SECRET || '';
   const scopes = process.env.SHOPIFY_SCOPES || 'read_products,read_inventory,read_orders,read_customers';
-  const appUrl = process.env.SHOPIFY_APP_URL || process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
+  const appUrl = process.env.SHOPIFY_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
   
   const redirectUri = `${appUrl}/api/shopify/callback`;
 

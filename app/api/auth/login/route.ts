@@ -1,9 +1,6 @@
 import { NextResponse } from 'next/server';
 import { SignJWT } from 'jose';
-
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'super-secret-fallback-key-change-in-production'
-);
+import { getJwtSecret } from '../../../../lib/auth/jwt-secret';
 
 export async function POST(request: Request) {
   try {
@@ -19,12 +16,26 @@ export async function POST(request: Request) {
       );
     }
 
+    // Resolve the JWT secret. No hardcoded/default fallback: if JWT_SECRET
+    // is not configured, refuse to issue a token rather than signing with a
+    // guessable value.
+    let jwtSecret: Uint8Array;
+    try {
+      jwtSecret = getJwtSecret();
+    } catch {
+      console.error('Cannot sign session token: JWT_SECRET is not configured');
+      return NextResponse.json(
+        { success: false, error: 'Erreur de configuration du serveur' },
+        { status: 500 }
+      );
+    }
+
     // Generate JWT
     const token = await new SignJWT({ admin: true })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
       .setExpirationTime('30d') // Valid for 30 days
-      .sign(JWT_SECRET);
+      .sign(jwtSecret);
 
     const response = NextResponse.json({ success: true });
     

@@ -1,10 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
-
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'super-secret-fallback-key-change-in-production'
-);
+import { getJwtSecret } from './lib/auth/jwt-secret';
 
 export default async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
@@ -19,7 +16,11 @@ export default async function proxy(request: NextRequest) {
   let isValid = false;
   if (token) {
     try {
-      await jwtVerify(token, JWT_SECRET);
+      // Throws if JWT_SECRET is not configured - treated as an invalid
+      // token below, so a missing secret fails closed (denies access)
+      // instead of falling back to a hardcoded/default secret.
+      const secret = getJwtSecret();
+      await jwtVerify(token, secret);
       isValid = true;
     } catch (err) {
       isValid = false;

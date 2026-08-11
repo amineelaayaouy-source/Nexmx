@@ -27,7 +27,7 @@ export async function shopifyGraphqlClient(query: string, variables: any = {}) {
   }
 
   const { shop, accessToken } = credentials;
-  const endpoint = `https://${shop}/admin/api/2024-01/graphql.json`;
+  const endpoint = `https://${shop}/admin/api/2026-07/graphql.json`;
 
   const response = await fetch(endpoint, {
     method: 'POST',
