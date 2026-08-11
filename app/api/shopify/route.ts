@@ -7,19 +7,12 @@ export async function POST(request: Request) {
     
     // Simulate finding API keys in settings
     const db = getDbConnection();
+    const result = await db.execute('SELECT * FROM settings');
     
-    const settings = await new Promise<Record<string, string>>((resolve, reject) => {
-      db.all('SELECT * FROM settings', (err, rows) => {
-        if (err) reject(err);
-        const s = (rows || []).reduce((acc: Record<string, string>, row: any) => {
-          acc[row.key] = row.value;
-          return acc;
-        }, {});
-        resolve(s);
-      });
-    });
-
-    db.close();
+    const settings = result.rows.reduce((acc: Record<string, string>, row: any) => {
+      acc[row.key as string] = row.value as string;
+      return acc;
+    }, {});
 
     const shopifyUrl = settings.shopify_url;
     const shopifyToken = settings.shopify_token;
