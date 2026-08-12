@@ -5,9 +5,24 @@ import { getJwtSecret } from './lib/auth/jwt-secret';
 
 export default async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
-  
+
+  // Shopify OAuth entry points. These must stay publicly reachable:
+  // - /api/shopify/auth is where a merchant starts the install/OAuth flow,
+  //   before any Nexmx session cookie can exist.
+  // - /api/shopify/callback is where Shopify redirects the merchant back
+  //   to after granting access; Shopify calls this directly, with no
+  //   Nexmx session cookie attached.
+  // Only these two exact routes are exempted - other /api/shopify/* routes
+  // (e.g. disconnect, the extraction endpoint) remain behind auth like the
+  // rest of the dashboard.
+  const isPublicShopifyOAuthRoute =
+    path === '/api/shopify/auth' || path === '/api/shopify/callback';
+
   // Public paths that do not require authentication
-  const isPublicPath = path === '/login' || path.startsWith('/api/auth');
+  const isPublicPath =
+    path === '/login' ||
+    path.startsWith('/api/auth') ||
+    isPublicShopifyOAuthRoute;
 
   // Check for the session cookie
   const token = request.cookies.get('nexmx_session')?.value;
