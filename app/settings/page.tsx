@@ -13,7 +13,10 @@ function SettingsContent() {
   const [shopDomainInput, setShopDomainInput] = useState('');
   const [status, setStatus] = useState('');
   const [isDisconnecting, setIsDisconnecting] = useState(false);
-  
+  const [shopifyMode, setShopifyMode] = useState<'manual' | 'oauth' | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -30,8 +33,31 @@ function SettingsContent() {
         if (data.success && data.settings) {
           setSettings(prev => ({ ...prev, ...data.settings }));
         }
+        if (data.success && data.shopify) {
+          setShopifyMode(data.shopify.mode ?? null);
+        }
       });
   }, [searchParams, router]);
+
+  const handleTestShopify = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch('/api/shopify/test');
+      const data = await res.json();
+      if (data.success) {
+        setTestResult({
+          ok: true,
+          message: `Connexion OK — ${data.shop.name} (${data.shop.domain})`,
+        });
+      } else {
+        setTestResult({ ok: false, message: data.error || 'Échec du test de connexion.' });
+      }
+    } catch (e) {
+      setTestResult({ ok: false, message: 'Échec du test de connexion.' });
+    }
+    setIsTesting(false);
+  };
 
   const handleAiChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSettings({ ...settings, [e.target.name]: e.target.value });
@@ -111,20 +137,85 @@ function SettingsContent() {
                 <div className="flex items-center space-x-3 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-md border border-gray-100 dark:border-gray-800">
                   <span className="text-green-500 text-xl">🟢</span>
                   <div>
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">Shopify Connecté</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">
+                      Shopify Connecté
+                      {shopifyMode === 'manual' && (
+                        <span className="ml-2 text-xs font-normal px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                          configuré côté serveur
+                        </span>
+                      )}
+                    </p>
                     <p className="text-sm text-gray-500 dark:text-gray-400">{settings.shopify_url}</p>
                   </div>
                 </div>
-                <button
-                  onClick={handleDisconnectShopify}
-                  disabled={isDisconnecting}
-                  className="self-start text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-sm font-medium px-4 py-2 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 rounded-md transition-colors disabled:opacity-50"
-                >
-                  {isDisconnecting ? 'Déconnexion...' : 'Déconnecter la boutique'}
-                </button>
+
+                {testResult && (
+                  <div
+                    className={`p-3 rounded-md text-sm border ${
+                      testResult.ok
+                        ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800'
+                        : 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800'
+                    }`}
+                  >
+                    {testResult.message}
+                  </div>
+                )}
+
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={handleTestShopify}
+                    disabled={isTesting}
+                    className="text-sm font-medium px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md transition-colors disabled:opacity-50"
+                  >
+                    {isTesting ? 'Test en cours...' : 'Tester la connexion'}
+                  </button>
+
+                  {shopifyMode === 'manual' ? (
+                    <p className="text-xs text-gray-500">
+                      Identifiants fournis par les variables d&apos;environnement du serveur. Supprimez-les pour déconnecter la boutique.
+                    </p>
+                  ) : (
+                    <button
+                      onClick={handleDisconnectShopify}
+                      disabled={isDisconnecting}
+                      className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-sm font-medium px-4 py-2 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 rounded-md transition-colors disabled:opacity-50"
+                    >
+                      {isDisconnecting ? 'Déconnexion...' : 'Déconnecter la boutique'}
+                    </button>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="flex flex-col space-y-4">
+                <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md">
+                  <p className="text-sm font-medium text-amber-900 dark:text-amber-200">Boutique non configurée</p>
+                  <p className="text-xs text-amber-800 dark:text-amber-300 mt-1">
+                    Mode manuel : définissez <code className="font-mono">SHOPIFY_STORE_DOMAIN</code> et{' '}
+                    <code className="font-mono">SHOPIFY_ADMIN_ACCESS_TOKEN</code> dans les variables
+                    d&apos;environnement du serveur, puis redéployez.
+                  </p>
+                </div>
+
+                {testResult && (
+                  <div
+                    className={`p-3 rounded-md text-sm border ${
+                      testResult.ok
+                        ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800'
+                        : 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800'
+                    }`}
+                  >
+                    {testResult.message}
+                  </div>
+                )}
+
+                <button
+                  onClick={handleTestShopify}
+                  disabled={isTesting}
+                  className="self-start text-sm font-medium px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md transition-colors disabled:opacity-50"
+                >
+                  {isTesting ? 'Test en cours...' : 'Tester la connexion'}
+                </button>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">URL de la boutique (ex: store.myshopify.com)</label>
                   <div className="flex space-x-3">
