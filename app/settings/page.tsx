@@ -3,11 +3,17 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import TopBar from '../../components/TopBar';
+import AnalysisSettings from '../../components/AnalysisSettings';
+import {
+  ANALYSIS_MODEL_KEY,
+  ANALYSIS_PROMPT_KEY,
+  DEFAULT_ANALYSIS_MODEL,
+  DEFAULT_ANALYSIS_PROMPT,
+} from '../../lib/ai/defaults';
 
 function SettingsContent() {
   const [settings, setSettings] = useState({
     shopify_url: '',
-    openrouter_key: '',
     higgsfield_key: '',
   });
   const [shopDomainInput, setShopDomainInput] = useState('');
@@ -16,6 +22,14 @@ function SettingsContent() {
   const [shopifyMode, setShopifyMode] = useState<'manual' | 'oauth' | null>(null);
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  // AI analysis configuration
+  const [analysisModel, setAnalysisModel] = useState(DEFAULT_ANALYSIS_MODEL);
+  const [analysisPrompt, setAnalysisPrompt] = useState(DEFAULT_ANALYSIS_PROMPT);
+  const [openRouterDraft, setOpenRouterDraft] = useState('');
+  const [hasOpenRouterKey, setHasOpenRouterKey] = useState(false);
+  const [openRouterFromEnv, setOpenRouterFromEnv] = useState(false);
+  const [isSavingAnalysis, setIsSavingAnalysis] = useState(false);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -30,14 +44,66 @@ function SettingsContent() {
     fetch('/api/settings')
       .then(res => res.json())
       .then(data => {
-        if (data.success && data.settings) {
+        if (!data.success) return;
+
+        if (data.settings) {
           setSettings(prev => ({ ...prev, ...data.settings }));
+          if (data.settings[ANALYSIS_MODEL_KEY]) {
+            setAnalysisModel(data.settings[ANALYSIS_MODEL_KEY]);
+          }
+          if (data.settings[ANALYSIS_PROMPT_KEY]) {
+            setAnalysisPrompt(data.settings[ANALYSIS_PROMPT_KEY]);
+          }
         }
-        if (data.success && data.shopify) {
+        if (data.shopify) {
           setShopifyMode(data.shopify.mode ?? null);
+        }
+        // Booleans only - the API never returns the stored key itself.
+        if (data.configured) {
+          setHasOpenRouterKey(Boolean(data.configured.openrouter_key));
+          setOpenRouterFromEnv(Boolean(data.configured.openrouter_key_env));
         }
       });
   }, [searchParams, router]);
+
+  const handleSaveAnalysisSettings = async () => {
+    setIsSavingAnalysis(true);
+    setStatus('');
+
+    const payload: Record<string, string> = {
+      [ANALYSIS_MODEL_KEY]: analysisModel,
+      [ANALYSIS_PROMPT_KEY]: analysisPrompt,
+    };
+    // Only send the key when the operator actually typed one; an empty field
+    // means "keep the stored value".
+    if (openRouterDraft.trim()) {
+      payload.openrouter_key = openRouterDraft.trim();
+    }
+
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setStatus("Configuration d'analyse enregistrée !");
+        if (openRouterDraft.trim()) {
+          setHasOpenRouterKey(true);
+          setOpenRouterDraft('');
+        }
+      } else {
+        setStatus(data.error || "Erreur lors de l'enregistrement.");
+      }
+    } catch {
+      setStatus("Erreur lors de l'enregistrement.");
+    }
+
+    setIsSavingAnalysis(false);
+    setTimeout(() => setStatus(''), 4000);
+  };
 
   const handleTestShopify = async () => {
     setIsTesting(true);
@@ -70,18 +136,17 @@ function SettingsContent() {
       const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          openrouter_key: settings.openrouter_key,
-          higgsfield_key: settings.higgsfield_key,
-        }),
+        // Blank values are ignored server-side, so submitting an untouched
+        // field cannot erase the stored key.
+        body: JSON.stringify({ higgsfield_key: settings.higgsfield_key }),
       });
       const data = await res.json();
       if (data.success) {
         setStatus('Paramètres IA enregistrés !');
       } else {
-        setStatus('Erreur lors de la sauvegarde.');
+        setStatus(data.error || 'Erreur lors de la sauvegarde.');
       }
-    } catch (err) {
+    } catch {
       setStatus('Erreur lors de la sauvegarde.');
     }
     setTimeout(() => setStatus(''), 3000);
@@ -239,20 +304,24 @@ function SettingsContent() {
             )}
           </section>
 
+          <AnalysisSettings
+            model={analysisModel}
+            prompt={analysisPrompt}
+            hasKey={hasOpenRouterKey}
+            keyFromEnv={openRouterFromEnv}
+            apiKeyDraft={openRouterDraft}
+            isSaving={isSavingAnalysis}
+            onChange={({ model, prompt, apiKey }) => {
+              if (model !== undefined) setAnalysisModel(model);
+              if (prompt !== undefined) setAnalysisPrompt(prompt);
+              if (apiKey !== undefined) setOpenRouterDraft(apiKey);
+            }}
+            onSave={handleSaveAnalysisSettings}
+          />
+
           <section className="bg-white dark:bg-gray-900 p-6 rounded-lg shadow border border-gray-200 dark:border-gray-800">
-            <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-800 pb-2 mb-4">API d'Intelligence Artificielle</h2>
+            <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-800 pb-2 mb-4">Autres API</h2>
             <form onSubmit={handleSaveAiSettings} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">OpenRouter API Key (Texte & Analyse)</label>
-                <input
-                  type="password"
-                  name="openrouter_key"
-                  value={settings.openrouter_key}
-                  onChange={handleAiChange}
-                  className="w-full border border-gray-300 dark:border-gray-700 rounded-md p-2 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white"
-                  placeholder="sk-or-v1-..."
-                />
-              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Higgsfield API Key (Génération d'images/vidéos)</label>
                 <input
