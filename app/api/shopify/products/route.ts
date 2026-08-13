@@ -15,8 +15,20 @@ import {
  */
 
 const PRODUCTS_QUERY = `
-  query NexmxStoreProducts($first: Int!, $after: String) {
-    products(first: $first, after: $after, sortKey: UPDATED_AT, reverse: true) {
+  query NexmxStoreProducts(
+    $first: Int!
+    $after: String
+    $query: String
+    $sortKey: ProductSortKeys!
+    $reverse: Boolean!
+  ) {
+    products(
+      first: $first
+      after: $after
+      query: $query
+      sortKey: $sortKey
+      reverse: $reverse
+    ) {
       edges {
         node {
           id
@@ -55,6 +67,33 @@ const PRODUCTS_QUERY = `
     }
   }
 `;
+
+/**
+ * Turn free text from the search box into a Shopify search query.
+ *
+ * Shopify's search syntax gives meaning to quotes, parentheses, backslashes,
+ * colons and a leading "-" (negation). Unbalanced input produces a GraphQL
+ * error, so those characters are stripped rather than passed through - this is a
+ * plain search box, not a query console.
+ *
+ * Bare terms already prefix-match ("supl" finds "Suplemento"), and a trailing
+ * "*" makes that behaviour explicit while the user is still typing. Mid-word
+ * matching is not supported by the Admin API, so "rginina" finds nothing.
+ */
+function buildSearchQuery(raw: string): string | null {
+  const cleaned = raw
+    .replace(/[\\"()]/g, ' ')
+    .replace(/:/g, ' ')
+    .split(/\s+/)
+    .map((term) => term.replace(/^-+/, '').trim())
+    .filter(Boolean);
+
+  if (cleaned.length === 0) return null;
+
+  return cleaned
+    .map((term) => (term.endsWith('*') ? term : `${term}*`))
+    .join(' ');
+}
 
 interface ProductNode {
   id: string;
@@ -95,8 +134,23 @@ export async function GET(request: Request): Promise<Response> {
     : 50;
   const after = searchParams.get('after') || null;
 
+  const rawSearch = (searchParams.get('q') ?? '').trim().slice(0, 200);
+  const query = rawSearch ? buildSearchQuery(rawSearch) : null;
+
+  // Relevance ordering only makes sense with a search term; browsing the full
+  // catalogue stays newest-updated-first. reverse must be false for RELEVANCE,
+  // otherwise the least relevant results come back first.
+  const sortKey = query ? 'RELEVANCE' : 'UPDATED_AT';
+  const reverse = !query;
+
   try {
-    const data = await shopifyGraphqlClient(PRODUCTS_QUERY, { first, after });
+    const data = await shopifyGraphqlClient(PRODUCTS_QUERY, {
+      first,
+      after,
+      query,
+      sortKey,
+      reverse,
+    });
 
     const edges = data.products.edges as { node: ProductNode }[];
 
@@ -118,6 +172,7 @@ export async function GET(request: Request): Promise<Response> {
     return NextResponse.json({
       success: true,
       shop: connection.shop,
+      query: rawSearch || null,
       products,
       pageInfo: data.products.pageInfo,
     });

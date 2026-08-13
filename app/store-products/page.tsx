@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import TopBar from '../../components/TopBar';
@@ -135,9 +135,19 @@ export default function StoreProductsPage() {
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasNextPage, setHasNextPage] = useState(false);
 
-  const load = useCallback(async (after: string | null) => {
+  // `search` is what the user is typing; `activeSearch` is the debounced value
+  // actually sent to the API.
+  const [search, setSearch] = useState('');
+  const [activeSearch, setActiveSearch] = useState('');
+
+  // Guards against a slow earlier request overwriting a newer one - without
+  // this, typing fast can leave stale results on screen.
+  const requestId = useRef(0);
+
+  const load = useCallback(async (after: string | null, query: string) => {
     const params = new URLSearchParams({ limit: '50' });
     if (after) params.set('after', after);
+    if (query) params.set('q', query);
 
     const res = await fetch(`/api/shopify/products?${params.toString()}`);
     const data = await res.json();
@@ -148,46 +158,61 @@ export default function StoreProductsPage() {
 
     return data as {
       shop: string;
+      query: string | null;
       products: StoreProduct[];
       pageInfo: { hasNextPage: boolean; endCursor: string | null };
     };
   }, []);
 
+  // Debounce typing so a search fires once the user pauses, not per keystroke.
   useEffect(() => {
-    let cancelled = false;
+    const timer = setTimeout(() => setActiveSearch(search.trim()), 350);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Runs on mount and whenever the debounced search term changes.
+  useEffect(() => {
+    const id = ++requestId.current;
 
     (async () => {
+      setIsLoading(true);
+      setError(null);
       try {
-        const data = await load(null);
-        if (cancelled) return;
+        const data = await load(null, activeSearch);
+        if (id !== requestId.current) return; // superseded by a newer search
         setShop(data.shop);
         setProducts(data.products);
         setHasNextPage(data.pageInfo.hasNextPage);
         setCursor(data.pageInfo.endCursor);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        if (id !== requestId.current) return;
+        setError(err instanceof Error ? err.message : String(err));
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (id === requestId.current) setIsLoading(false);
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [load]);
+  }, [load, activeSearch]);
 
   const handleLoadMore = async () => {
     setIsLoadingMore(true);
+    const id = requestId.current;
     try {
-      const data = await load(cursor);
+      const data = await load(cursor, activeSearch);
+      // Drop the page if the search changed while it was in flight.
+      if (id !== requestId.current) return;
       setProducts((prev) => [...prev, ...data.products]);
       setHasNextPage(data.pageInfo.hasNextPage);
       setCursor(data.pageInfo.endCursor);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (id === requestId.current) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      setIsLoadingMore(false);
     }
-    setIsLoadingMore(false);
   };
+
+  const isSearching = activeSearch.length > 0;
 
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-950 overflow-y-auto">
@@ -197,14 +222,37 @@ export default function StoreProductsPage() {
       />
 
       <div className="p-8 max-w-6xl mx-auto w-full">
-        <div className="flex items-baseline justify-between mb-6">
+        <div className="flex items-baseline justify-between mb-4">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
             Produits de la boutique
           </h1>
           {!isLoading && !error && (
             <p className="text-sm text-gray-500">
               {products.length} produit{products.length === 1 ? '' : 's'}
+              {isSearching ? ' trouvé' + (products.length === 1 ? '' : 's') : ''}
             </p>
+          )}
+        </div>
+
+        <div className="relative mb-6">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+            🔍
+          </span>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Rechercher un produit (titre, référence, fournisseur...)"
+            aria-label="Rechercher un produit"
+            className="w-full pl-10 pr-24 py-2.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            >
+              Effacer
+            </button>
           )}
         </div>
 
@@ -242,13 +290,31 @@ export default function StoreProductsPage() {
 
         {!isLoading && !error && products.length === 0 && (
           <div className="p-12 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-center">
-            <p className="text-4xl mb-3">🛍️</p>
+            <p className="text-4xl mb-3">{isSearching ? '🔍' : '🛍️'}</p>
             <p className="text-sm font-medium text-gray-900 dark:text-white">
               Aucun produit trouvé
             </p>
-            <p className="text-sm text-gray-500 mt-1">
-              Cette boutique Shopify ne contient encore aucun produit.
-            </p>
+            {isSearching ? (
+              <>
+                <p className="text-sm text-gray-500 mt-1">
+                  Aucun résultat pour «&nbsp;{activeSearch}&nbsp;».
+                </p>
+                <p className="text-xs text-gray-400 mt-2">
+                  La recherche porte sur le début des mots : «&nbsp;argi&nbsp;» trouve
+                  «&nbsp;Arginina&nbsp;», mais «&nbsp;rginina&nbsp;» ne trouve rien.
+                </p>
+                <button
+                  onClick={() => setSearch('')}
+                  className="mt-4 text-sm font-medium px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md transition-colors"
+                >
+                  Effacer la recherche
+                </button>
+              </>
+            ) : (
+              <p className="text-sm text-gray-500 mt-1">
+                Cette boutique Shopify ne contient encore aucun produit.
+              </p>
+            )}
           </div>
         )}
 
