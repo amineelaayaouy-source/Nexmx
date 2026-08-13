@@ -20,6 +20,10 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
 
+  const activeIndex = MENU_ITEMS.findIndex((item) =>
+    item.path === '/' ? pathname === '/' : pathname.startsWith(item.path)
+  );
+
   const handleLogout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
@@ -41,9 +45,13 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 px-4 space-y-1 mt-4 overflow-y-auto">
-        {MENU_ITEMS.map((item) => {
-          const isActive = item.name === 'Mes Projets';
-          
+        {MENU_ITEMS.map((item, index) => {
+          // Highlight the entry matching the current route. findIndex returns the
+          // first match, so of the two entries pointing at "/" only Accueil lights
+          // up. Previously this was hardcoded to "Mes Projets", which stayed
+          // highlighted on every page.
+          const isActive = index === activeIndex;
+
           return (
             <Link
               key={item.name}
