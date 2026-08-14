@@ -39,7 +39,7 @@ export default function Sidebar() {
       <div className="p-6">
         <h1 className="text-xl font-bold flex items-center space-x-2">
           <span className="bg-indigo-600 text-white rounded-md p-1 px-2 text-sm">N</span>
-          <span className="text-gray-900 dark:text-white">Nexmx</span>
+          <span className="text-gray-900 dark:text-white">nexmex</span>
         </h1>
         <p className="text-xs text-gray-500 mt-1">The AI engine for e-commerce</p>
       </div>

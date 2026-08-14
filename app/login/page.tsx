@@ -42,7 +42,7 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold flex items-center justify-center space-x-2">
             <span className="bg-indigo-600 text-white rounded-md p-1 px-3 text-2xl">N</span>
-            <span className="text-gray-900 dark:text-white">Nexmx</span>
+            <span className="text-gray-900 dark:text-white">nexmex</span>
           </h1>
           <p className="text-gray-500 mt-2">Accès restreint à l'administrateur</p>
         </div>

@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Nexmx",
+  title: "nexmex",
   description: "The AI engine for e-commerce",
 };
 
