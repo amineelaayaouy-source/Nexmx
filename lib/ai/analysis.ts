@@ -7,8 +7,13 @@
  * rejected rather than rendered as a half-empty report.
  */
 
-export const VERDICTS = ['TEST', 'TEST WITH CAUTION', 'SKIP'] as const;
+export const VERDICTS = ['WIN', 'TEST', 'AVOID'] as const;
 export type Verdict = (typeof VERDICTS)[number];
+
+export interface ChecklistItem {
+  score: number;
+  reason: string;
+}
 
 export interface MarketingAngle {
   angle_name: string;
@@ -17,25 +22,24 @@ export interface MarketingAngle {
 }
 
 export interface AnalysisResult {
-  product_summary: {
-    problem_solved: string;
-    target_audience: string;
-  };
-  scores: {
-    cod_feasibility_score: number;
-    impulse_factor_score: number;
-    creative_potential_score: number;
-    low_risk_score: number;
-    overall_score: number;
-  };
+  overall_score: number;
   verdict: Verdict;
-  verdict_reasoning: string;
-  recommended_pricing_mxn: {
-    suggested_price: string;
-    perceived_value_anchor: string;
+  checklist: {
+    wow_effect: ChecklistItem;
+    clear_problem: ChecklistItem;
+    demand_potential: ChecklistItem;
+    profit_margin: ChecklistItem;
+    easy_to_advertise: ChecklistItem;
+    cod_feasibility: ChecklistItem;
+    competition: ChecklistItem;
+    saturation: ChecklistItem;
+    risk_level: ChecklistItem;
+    scaling_potential: ChecklistItem;
   };
-  top_3_marketing_angles: MarketingAngle[];
-  major_objections: string[];
+  strengths: string[];
+  weaknesses: string[];
+  marketing_angles: MarketingAngle[];
+  final_recommendation: string;
 }
 
 export class AnalysisParseError extends Error {
@@ -75,11 +79,11 @@ function asString(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value.trim() : fallback;
 }
 
-/** Coerce to an integer score inside 0-100; NaN and out-of-range are clamped. */
+/** Coerce to an integer score inside 0-10; NaN and out-of-range are clamped. */
 function asScore(value: unknown): number {
   const n = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(100, Math.round(n)));
+  return Math.max(0, Math.min(10, Math.round(n)));
 }
 
 function asVerdict(value: unknown): Verdict | null {
@@ -88,6 +92,14 @@ function asVerdict(value: unknown): Verdict | null {
   return (VERDICTS as readonly string[]).includes(normalized)
     ? (normalized as Verdict)
     : null;
+}
+
+function asChecklistItem(value: unknown): ChecklistItem {
+  const obj = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  return {
+    score: asScore(obj.score),
+    reason: asString(obj.reason),
+  };
 }
 
 export function parseAnalysisResult(raw: string): AnalysisResult {
@@ -121,12 +133,18 @@ export function parseAnalysisResult(raw: string): AnalysisResult {
   const bag = (value: unknown): Record<string, unknown> =>
     value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 
-  const scores = bag(parsed.scores);
-  const summary = bag(parsed.product_summary);
-  const pricing = bag(parsed.recommended_pricing_mxn);
+  const checklistObj = bag(parsed.checklist);
 
-  const angles: MarketingAngle[] = Array.isArray(parsed.top_3_marketing_angles)
-    ? (parsed.top_3_marketing_angles as unknown[])
+  const strengths = Array.isArray(parsed.strengths)
+    ? parsed.strengths.map((s: unknown) => asString(s)).filter((s) => s.length > 0)
+    : [];
+
+  const weaknesses = Array.isArray(parsed.weaknesses)
+    ? parsed.weaknesses.map((s: unknown) => asString(s)).filter((s) => s.length > 0)
+    : [];
+
+  const angles: MarketingAngle[] = Array.isArray(parsed.marketing_angles)
+    ? (parsed.marketing_angles as unknown[])
         .filter((a) => a && typeof a === 'object')
         .slice(0, 3)
         .map((entry) => {
@@ -140,37 +158,30 @@ export function parseAnalysisResult(raw: string): AnalysisResult {
         .filter((a) => a.hook_spanish_mx || a.core_message)
     : [];
 
-  const objections: string[] = Array.isArray(parsed.major_objections)
-    ? parsed.major_objections
-        .map((o: unknown) => asString(o))
-        .filter((o: string) => o.length > 0)
-    : [];
-
-  const reasoning = asString(parsed.verdict_reasoning);
-  if (!reasoning) {
-    throw new AnalysisParseError('verdict_reasoning manquant.', raw);
+  const recommendation = asString(parsed.final_recommendation);
+  if (!recommendation) {
+    throw new AnalysisParseError('final_recommendation manquante.', raw);
   }
 
   return {
-    product_summary: {
-      problem_solved: asString(summary.problem_solved),
-      target_audience: asString(summary.target_audience),
-    },
-    scores: {
-      cod_feasibility_score: asScore(scores.cod_feasibility_score),
-      impulse_factor_score: asScore(scores.impulse_factor_score),
-      creative_potential_score: asScore(scores.creative_potential_score),
-      low_risk_score: asScore(scores.low_risk_score),
-      overall_score: asScore(scores.overall_score),
-    },
+    overall_score: asScore(parsed.overall_score),
     verdict,
-    verdict_reasoning: reasoning,
-    recommended_pricing_mxn: {
-      suggested_price: asString(pricing.suggested_price),
-      perceived_value_anchor: asString(pricing.perceived_value_anchor),
+    checklist: {
+      wow_effect: asChecklistItem(checklistObj.wow_effect),
+      clear_problem: asChecklistItem(checklistObj.clear_problem),
+      demand_potential: asChecklistItem(checklistObj.demand_potential),
+      profit_margin: asChecklistItem(checklistObj.profit_margin),
+      easy_to_advertise: asChecklistItem(checklistObj.easy_to_advertise),
+      cod_feasibility: asChecklistItem(checklistObj.cod_feasibility),
+      competition: asChecklistItem(checklistObj.competition),
+      saturation: asChecklistItem(checklistObj.saturation),
+      risk_level: asChecklistItem(checklistObj.risk_level),
+      scaling_potential: asChecklistItem(checklistObj.scaling_potential),
     },
-    top_3_marketing_angles: angles,
-    major_objections: objections,
+    strengths,
+    weaknesses,
+    marketing_angles: angles,
+    final_recommendation: recommendation,
   };
 }
 

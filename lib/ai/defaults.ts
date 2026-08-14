@@ -48,50 +48,46 @@ PRODUCT INPUT DATA:
 - Selling Price Target (MXN): {selling_price}
 
 ANALYSIS REQUIREMENTS:
-Analyze the product through the lens of a high-speed COD testing model in {target_market}, across these 4 dimensions:
-
-1. COD & FINANCIAL FEASIBILITY
-- Margins: is the potential price 3x-4x the sourcing cost?
-- Shipping risk: heavy, bulky or fragile (high return/refusal risk)?
-- Local market fit: culturally relevant and needed right now?
-
-2. IMPULSE BUY & PROBLEM INTENSITY
-- Does it solve a sharp, clear pain point?
-- Wow / demonstration factor: can it stop the scroll in the first 3 seconds of a video?
-- Saturation: is it easily available at physical retail (Walmart, OXXO, farmacias, local markets)? If yes, that is high risk.
-
-3. CREATIVE & MARKETING ANGLES POTENTIAL
-- UGC viability: is it easy to record or simulate authentic local UGC ads?
-- Target audience clarity: who is the exact buyer?
-- Key objections: the top 2-3 hesitations and how to counter them.
-
-4. OPERATIONAL & POLICY RISKS
-- Meta ad policy risk: risk of rejection or ban (health claims, before/after imagery, personal attributes).
-- Quality & refusal risk: is quality likely to cause refusal on delivery?
+Analyze the product across these 10 criteria. For each, give a score (1-10) and a brief 1-sentence reason.
+1. WOW Effect: visual stopping power, demonstrable.
+2. Clear Problem Solved: does it relieve a sharp pain point?
+3. Demand / Market Potential: breadth of audience and cultural relevance.
+4. Profit Margin Potential: is the target price realistic vs cost?
+5. Easy to Advertise: UGC viability, policy risk.
+6. COD Feasibility: ease of delivery, return risk.
+7. Competition: is it widely sold by others?
+8. Saturation: availability in physical retail (OXXO, Walmart).
+9. Risk Level: shipping size, breakage, health claims.
+10. Scaling Potential: longevity and mass appeal.
 
 RULES:
-- Be decisive and commercially honest. If the product is weak, say SKIP.
+- Be decisive and commercially honest.
 - Hooks must be in authentic Mexican Spanish, natural and spoken, not translated.
-- Never invent supplier costs or competitor prices. If cost is "Unknown", reason about it explicitly.
-- Do not produce marketing claims that would violate advertising policy or make unsupported health claims.
-- Scores are 0-100. overall_score must reflect the other four, not be an arbitrary number.
+- Never invent supplier costs.
+- Scores are 1-10. overall_score is 1-10 (average or weighted).
+- Verdict must be exactly "WIN", "TEST", or "AVOID".
 
 OUTPUT FORMAT:
 Return ONLY a valid JSON object, no markdown fences and no commentary, matching exactly:
 {
-  "product_summary": { "problem_solved": "", "target_audience": "" },
-  "scores": {
-    "cod_feasibility_score": 0,
-    "impulse_factor_score": 0,
-    "creative_potential_score": 0,
-    "low_risk_score": 0,
-    "overall_score": 0
+  "overall_score": 0,
+  "verdict": "TEST",
+  "checklist": {
+    "wow_effect": { "score": 0, "reason": "" },
+    "clear_problem": { "score": 0, "reason": "" },
+    "demand_potential": { "score": 0, "reason": "" },
+    "profit_margin": { "score": 0, "reason": "" },
+    "easy_to_advertise": { "score": 0, "reason": "" },
+    "cod_feasibility": { "score": 0, "reason": "" },
+    "competition": { "score": 0, "reason": "" },
+    "saturation": { "score": 0, "reason": "" },
+    "risk_level": { "score": 0, "reason": "" },
+    "scaling_potential": { "score": 0, "reason": "" }
   },
-  "verdict": "TEST" | "TEST WITH CAUTION" | "SKIP",
-  "verdict_reasoning": "",
-  "recommended_pricing_mxn": { "suggested_price": "", "perceived_value_anchor": "" },
-  "top_3_marketing_angles": [
+  "strengths": ["", ""],
+  "weaknesses": ["", ""],
+  "marketing_angles": [
     { "angle_name": "", "hook_spanish_mx": "", "core_message": "" }
   ],
-  "major_objections": []
+  "final_recommendation": ""
 }`;
