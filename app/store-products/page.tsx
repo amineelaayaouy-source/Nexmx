@@ -5,7 +5,19 @@ import Image from 'next/image';
 import Link from 'next/link';
 import TopBar from '../../components/TopBar';
 import ProductAnalysis from '../../components/ProductAnalysis';
-import type { AnalysisResult } from '../../lib/ai/analysis';
+import AnalysisModal from '../../components/AnalysisModal';
+import VerdictBadge from '../../components/VerdictBadge';
+import type { AnalysisResult, Verdict } from '../../lib/ai/analysis';
+
+/** The latest stored analysis for a product, as listed by /api/analyses. */
+interface AnalysisSummary {
+  id: string;
+  productId: string | null;
+  overallScore: number;
+  verdict: Verdict;
+  createdAt: string;
+  model: string | null;
+}
 
 interface StoreProduct {
   id: string;
@@ -75,10 +87,12 @@ function StatusBadge({ status }: { status: string }) {
 
 function ProductCard({
   product,
-  onAnalyze,
+  savedAnalysis,
+  onOpen,
 }: {
   product: StoreProduct;
-  onAnalyze: (product: StoreProduct) => void;
+  savedAnalysis?: AnalysisSummary;
+  onOpen: (product: StoreProduct) => void;
 }) {
   const inventory = product.totalInventory;
   const outOfStock = inventory !== null && inventory <= 0;
@@ -98,6 +112,17 @@ function ProductCard({
         ) : (
           <div className="w-full h-full flex items-center justify-center text-4xl text-gray-300 dark:text-gray-600">
             🛍️
+          </div>
+        )}
+
+        {/* An already-analysed product is marked on the card itself, so the
+            grid shows at a glance what has been looked at and what has not. */}
+        {savedAnalysis && (
+          <div className="absolute top-2 left-2">
+            <VerdictBadge
+              verdict={savedAnalysis.verdict}
+              score={savedAnalysis.overallScore}
+            />
           </div>
         )}
       </div>
@@ -131,10 +156,14 @@ function ProductCard({
         </div>
 
         <button
-          onClick={() => onAnalyze(product)}
-          className="mt-3 w-full text-sm font-medium py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition-colors"
+          onClick={() => onOpen(product)}
+          className={`mt-3 w-full text-sm font-medium py-2 rounded-md transition-colors ${
+            savedAnalysis
+              ? 'bg-white dark:bg-gray-900 border border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30'
+              : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+          }`}
         >
-          Analyser le produit
+          {savedAnalysis ? "Voir l'analyse" : 'Analyser le produit'}
         </button>
       </div>
     </div>
@@ -229,19 +258,49 @@ export default function StoreProductsPage() {
 
   const isSearching = activeSearch.length > 0;
 
+  // --- saved analyses ---
+  // Which products already have a stored analysis. Loaded once so the grid can
+  // mark them, and kept in sync as new analyses are produced.
+  const [savedAnalyses, setSavedAnalyses] = useState<Record<string, AnalysisSummary>>({});
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/analyses?view=summary');
+        const data = await res.json();
+        if (data.success) {
+          setSavedAnalyses(data.byProduct as Record<string, AnalysisSummary>);
+        }
+      } catch (err) {
+        // The grid is still fully usable without the badges.
+        console.error('Could not load saved analyses', err);
+      }
+    })();
+  }, []);
+
   // --- analysis modal ---
   const [analyzing, setAnalyzing] = useState<StoreProduct | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [analysisModel, setAnalysisModel] = useState<string | null>(null);
+  const [analysisSavedAt, setAnalysisSavedAt] = useState<string | null>(null);
+  const [analysisWarning, setAnalysisWarning] = useState<string | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [analysisCode, setAnalysisCode] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-  const handleAnalyze = async (product: StoreProduct) => {
-    setAnalyzing(product);
+  const resetAnalysisState = () => {
     setAnalysisResult(null);
+    setAnalysisModel(null);
+    setAnalysisSavedAt(null);
+    setAnalysisWarning(null);
     setAnalysisError(null);
     setAnalysisCode(null);
+  };
+
+  /** Run the model and store the result. */
+  const runAnalysis = async (product: StoreProduct) => {
+    setAnalyzing(product);
+    resetAnalysisState();
     setIsAnalyzing(true);
 
     try {
@@ -253,6 +312,9 @@ export default function StoreProductsPage() {
           productData: {
             title: product.title,
             sellingPrice: product.minPrice,
+            currency: product.currency,
+            imageUrl: product.imageUrl,
+            shop,
             targetMarket: 'Mexico',
           },
         }),
@@ -263,6 +325,26 @@ export default function StoreProductsPage() {
       if (data.success) {
         setAnalysisResult(data.analysis as AnalysisResult);
         setAnalysisModel(data.model ?? null);
+        setAnalysisSavedAt(data.saved ? (data.createdAt as string) : null);
+
+        if (data.saved && data.analysisId) {
+          // Mark the card immediately, without refetching the whole summary.
+          setSavedAnalyses((prev) => ({
+            ...prev,
+            [product.id]: {
+              id: data.analysisId as string,
+              productId: product.id,
+              overallScore: data.analysis.overall_score as number,
+              verdict: data.analysis.verdict as Verdict,
+              createdAt: data.createdAt as string,
+              model: data.model ?? null,
+            },
+          }));
+        } else {
+          setAnalysisWarning(
+            "Cette analyse n'a pas pu être enregistrée et sera perdue à la fermeture. Vérifiez la configuration de la base de données."
+          );
+        }
       } else {
         setAnalysisError(data.error || "L'analyse a échoué.");
         setAnalysisCode(data.code ?? null);
@@ -273,11 +355,43 @@ export default function StoreProductsPage() {
     setIsAnalyzing(false);
   };
 
+  /**
+   * Open the stored analysis when there is one, otherwise run a new one.
+   *
+   * Re-running costs a model call and a minute of waiting, so it only ever
+   * happens on an explicit "Relancer l'analyse".
+   */
+  const handleOpen = async (product: StoreProduct) => {
+    const saved = savedAnalyses[product.id];
+    if (!saved) {
+      await runAnalysis(product);
+      return;
+    }
+
+    setAnalyzing(product);
+    resetAnalysisState();
+    setIsAnalyzing(true);
+
+    try {
+      const res = await fetch(`/api/analyses/${saved.id}`);
+      const data = await res.json();
+
+      if (data.success) {
+        setAnalysisResult(data.analysis as AnalysisResult);
+        setAnalysisModel(data.model ?? null);
+        setAnalysisSavedAt(data.createdAt as string);
+      } else {
+        setAnalysisError(data.error || "Impossible d'ouvrir l'analyse enregistrée.");
+      }
+    } catch (err) {
+      setAnalysisError(err instanceof Error ? err.message : String(err));
+    }
+    setIsAnalyzing(false);
+  };
+
   const closeAnalysis = () => {
     setAnalyzing(null);
-    setAnalysisResult(null);
-    setAnalysisError(null);
-    setAnalysisCode(null);
+    resetAnalysisState();
   };
 
   return (
@@ -391,7 +505,8 @@ export default function StoreProductsPage() {
                 <ProductCard
                   key={product.id}
                   product={product}
-                  onAnalyze={handleAnalyze}
+                  savedAnalysis={savedAnalyses[product.id]}
+                  onOpen={handleOpen}
                 />
               ))}
             </div>
@@ -412,91 +527,85 @@ export default function StoreProductsPage() {
       </div>
 
       {analyzing && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 overflow-y-auto"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Analyse du produit"
-          onClick={closeAnalysis}
-        >
-          <div
-            className="bg-gray-50 dark:bg-gray-950 rounded-xl shadow-xl w-full max-w-3xl my-8"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <header className="flex items-start justify-between gap-4 p-5 border-b border-gray-200 dark:border-gray-800 sticky top-0 bg-gray-50 dark:bg-gray-950 rounded-t-xl">
-              <div className="min-w-0">
-                <p className="text-xs uppercase tracking-wide text-gray-500">
-                  Analyse produit — COD Mexique
-                </p>
-                <h2 className="text-base font-semibold text-gray-900 dark:text-white truncate">
-                  {analyzing.title}
-                </h2>
-              </div>
+        <AnalysisModal
+          eyebrow="Analyse produit — COD Mexique"
+          title={analyzing.title}
+          onClose={closeAnalysis}
+          headerExtra={
+            !isAnalyzing && analysisResult ? (
               <button
-                onClick={closeAnalysis}
-                aria-label="Fermer"
-                className="shrink-0 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-xl leading-none px-2"
+                onClick={() => runAnalysis(analyzing)}
+                className="text-xs font-medium px-3 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
               >
-                ×
+                Relancer l&apos;analyse
               </button>
-            </header>
-
-            <div className="p-5">
-              {isAnalyzing && (
-                <div className="py-12 text-center">
-                  <div className="inline-block w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-                  <p className="text-sm font-medium text-gray-900 dark:text-white mt-4">
-                    Analyse du produit pour le COD Mexique...
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Cela peut prendre jusqu&apos;à une minute.
-                  </p>
-                </div>
-              )}
-
-              {!isAnalyzing && analysisError && (
-                <div className="p-5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                  <p className="text-sm font-medium text-red-800 dark:text-red-300">
-                    L&apos;analyse a échoué
-                  </p>
-                  <p className="text-sm text-red-700 dark:text-red-400 mt-1">
-                    {analysisError}
-                  </p>
-
-                  {analysisCode === 'MISSING_API_KEY' && (
-                    <Link
-                      href="/settings"
-                      className="inline-block mt-4 text-sm font-medium text-red-700 dark:text-red-300 underline"
-                    >
-                      Configurer la clé dans Paramètres
-                    </Link>
-                  )}
-
-                  {analysisCode === 'INVALID_MODEL_OUTPUT' && (
-                    <p className="text-xs text-red-600 dark:text-red-400 mt-3">
-                      Le modèle n&apos;a pas respecté le format JSON. Réessayez, ou
-                      choisissez un autre modèle dans Paramètres.
-                    </p>
-                  )}
-
-                  <button
-                    onClick={() => handleAnalyze(analyzing)}
-                    className="block mt-4 text-sm font-medium px-4 py-2 bg-white dark:bg-gray-900 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 rounded-md hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
-                  >
-                    Réessayer
-                  </button>
-                </div>
-              )}
-
-              {!isAnalyzing && analysisResult && (
-                <ProductAnalysis
-                  result={analysisResult}
-                  model={analysisModel ?? undefined}
-                />
-              )}
+            ) : null
+          }
+        >
+          {isAnalyzing && (
+            <div className="py-12 text-center">
+              <div className="inline-block w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm font-medium text-gray-900 dark:text-white mt-4">
+                Analyse du produit pour le COD Mexique...
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Cela peut prendre jusqu&apos;à une minute.
+              </p>
             </div>
-          </div>
-        </div>
+          )}
+
+          {!isAnalyzing && analysisError && (
+            <div className="p-5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+              <p className="text-sm font-medium text-red-800 dark:text-red-300">
+                L&apos;analyse a échoué
+              </p>
+              <p className="text-sm text-red-700 dark:text-red-400 mt-1">
+                {analysisError}
+              </p>
+
+              {analysisCode === 'MISSING_API_KEY' && (
+                <Link
+                  href="/settings"
+                  className="inline-block mt-4 text-sm font-medium text-red-700 dark:text-red-300 underline"
+                >
+                  Configurer la clé dans Paramètres
+                </Link>
+              )}
+
+              {analysisCode === 'INVALID_MODEL_OUTPUT' && (
+                <p className="text-xs text-red-600 dark:text-red-400 mt-3">
+                  Le modèle n&apos;a pas respecté le format JSON. Réessayez, ou
+                  choisissez un autre modèle dans Paramètres.
+                </p>
+              )}
+
+              <button
+                onClick={() => runAnalysis(analyzing)}
+                className="block mt-4 text-sm font-medium px-4 py-2 bg-white dark:bg-gray-900 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 rounded-md hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+              >
+                Réessayer
+              </button>
+            </div>
+          )}
+
+          {!isAnalyzing && analysisResult && (
+            <>
+              {analysisWarning && (
+                <div className="mb-5 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                  <p className="text-sm text-amber-800 dark:text-amber-300">
+                    ⚠ {analysisWarning}
+                  </p>
+                </div>
+              )}
+
+              <ProductAnalysis
+                result={analysisResult}
+                model={analysisModel ?? undefined}
+                savedAt={analysisSavedAt ?? undefined}
+              />
+            </>
+          )}
+        </AnalysisModal>
       )}
     </div>
   );

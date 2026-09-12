@@ -2,6 +2,7 @@
 
 import React from 'react';
 import type { AnalysisResult, Verdict, ChecklistItem } from '../lib/ai/analysis';
+import { formatAnalysisDate } from './VerdictBadge';
 
 const VERDICT_STYLES: Record<Verdict, { badge: string; label: string }> = {
   WIN: {
@@ -47,9 +48,11 @@ function CheckListRow({ label, item }: { label: string; item: ChecklistItem }) {
 interface Props {
   result: AnalysisResult;
   model?: string;
+  /** ISO timestamp of when this analysis was stored, for a saved result. */
+  savedAt?: string;
 }
 
-export default function ProductAnalysis({ result, model }: Props) {
+export default function ProductAnalysis({ result, model, savedAt }: Props) {
   const verdict = VERDICT_STYLES[result.verdict];
   const overall = result.overall_score;
 
@@ -178,9 +181,11 @@ export default function ProductAnalysis({ result, model }: Props) {
         </section>
       )}
 
-      {model && (
+      {(model || savedAt) && (
         <p className="text-xs text-gray-400 text-center pt-2">
-          Analyse générée par {model}
+          {model && <>Analyse générée par {model}</>}
+          {model && savedAt && ' • '}
+          {savedAt && <>enregistrée le {formatAnalysisDate(savedAt)}</>}
         </p>
       )}
     </div>

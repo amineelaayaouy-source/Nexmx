@@ -7,6 +7,7 @@ import {
   parseAnalysisResult,
 } from '../../../../lib/ai/analysis';
 import { shopifyGraphqlClient } from '../../../../lib/shopify/admin';
+import { saveAnalysis } from '../../../../lib/analyses/store';
 
 /**
  * POST /api/ai/analyze
@@ -14,9 +15,9 @@ import { shopifyGraphqlClient } from '../../../../lib/shopify/admin';
  * Body: { productId?: string, productData: {...} }
  *
  * Loads the operator's saved prompt and model, substitutes the product data
- * into the template, calls the model through OpenRouter and returns the parsed
- * analysis. The API key is resolved server-side and never appears in the
- * response.
+ * into the template, calls the model through OpenRouter, stores the parsed
+ * analysis and returns it. The API key is resolved server-side and never
+ * appears in the response.
  *
  * Behind the session cookie via proxy.ts, like the rest of the dashboard API.
  */
@@ -29,6 +30,9 @@ interface ProductData {
   supplierCost?: string | number | null;
   sellingPrice?: string | number | null;
   targetMarket?: string;
+  imageUrl?: string | null;
+  currency?: string | null;
+  shop?: string | null;
 }
 
 /** Strip HTML so the model receives readable text, not markup noise. */
@@ -68,6 +72,7 @@ async function fetchProductFromShopify(productId: string) {
         product(id: $id) {
           title
           descriptionHtml
+          featuredImage { url }
           priceRangeV2 { minVariantPrice { amount currencyCode } }
         }
       }`,
@@ -81,6 +86,8 @@ async function fetchProductFromShopify(productId: string) {
       title: product.title as string,
       description: (product.descriptionHtml as string) ?? '',
       sellingPrice: product.priceRangeV2?.minVariantPrice?.amount ?? null,
+      currency: product.priceRangeV2?.minVariantPrice?.currencyCode ?? null,
+      imageUrl: (product.featuredImage?.url as string | undefined) ?? null,
     };
   } catch (error) {
     console.error('Could not fetch product detail from Shopify:', error);
@@ -109,6 +116,8 @@ export async function POST(request: Request): Promise<Response> {
       productData.title = productData.title || fetched.title;
       productData.description = fetched.description;
       productData.sellingPrice = productData.sellingPrice ?? fetched.sellingPrice;
+      productData.currency = productData.currency ?? fetched.currency;
+      productData.imageUrl = productData.imageUrl ?? fetched.imageUrl;
     }
   }
 
@@ -148,8 +157,37 @@ export async function POST(request: Request): Promise<Response> {
 
     const analysis = parseAnalysisResult(raw);
 
+    // The analysis cost a model call and up to a minute of the operator's time,
+    // so losing it when the modal closes is not acceptable. A storage failure
+    // must not throw away the result that is already in hand: it is logged and
+    // reported as saved: false, and the analysis is still returned.
+    let analysisId: string | null = null;
+    let saved = false;
+
+    try {
+      analysisId = await saveAnalysis({
+        productId: body.productId ?? null,
+        productTitle: String(productData.title),
+        productImage: productData.imageUrl ?? null,
+        productPrice:
+          productData.sellingPrice === null || productData.sellingPrice === undefined
+            ? null
+            : String(productData.sellingPrice),
+        productCurrency: productData.currency ?? null,
+        shop: productData.shop ?? null,
+        model: settings.model,
+        analysis,
+      });
+      saved = true;
+    } catch (error) {
+      console.error('Analysis produced but could not be saved:', error);
+    }
+
     return NextResponse.json({
       success: true,
+      analysisId,
+      saved,
+      createdAt: new Date().toISOString(),
       productId: body.productId ?? null,
       model: settings.model,
       analysis,

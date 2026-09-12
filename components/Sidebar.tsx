@@ -9,7 +9,7 @@ const MENU_ITEMS = [
   { name: 'Store Products', path: '/store-products', icon: '🛍️' },
   { name: 'Test', path: '/test', icon: '🧪' },
   { name: 'Marketing Studio', path: '/marketing-studio', icon: '🎥' },
-  { name: 'Mes Projets', path: '/', icon: '📁' }, // Currently active
+  { name: 'Mes Projets', path: '/projets', icon: '📁' },
   { name: 'Audit Stripe', path: '/audit-stripe', icon: '💳' },
   { name: 'Analyse', path: '/analyse', icon: '🎧' },
   { name: 'Marketing', path: '/marketing', icon: '📣' },
@@ -47,9 +47,9 @@ export default function Sidebar() {
       <nav className="flex-1 px-4 space-y-1 mt-4 overflow-y-auto">
         {MENU_ITEMS.map((item, index) => {
           // Highlight the entry matching the current route. findIndex returns the
-          // first match, so of the two entries pointing at "/" only Accueil lights
-          // up. Previously this was hardcoded to "Mes Projets", which stayed
-          // highlighted on every page.
+          // first match, so an entry can never light up on a route an earlier one
+          // already claims. Previously this was hardcoded to "Mes Projets", which
+          // stayed highlighted on every page.
           const isActive = index === activeIndex;
 
           return (

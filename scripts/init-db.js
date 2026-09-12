@@ -34,14 +34,27 @@ async function initialize() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Analyses
+    -- Analyses. The denormalised product_* columns let the list views render
+    -- without a Shopify round-trip. An existing database missing these columns
+    -- is migrated at runtime by ensureDatabaseReady() in db/index.ts.
     CREATE TABLE IF NOT EXISTS analyses (
       id TEXT PRIMARY KEY,
       product_id TEXT,
+      product_title TEXT,
+      product_image TEXT,
+      product_price TEXT,
+      product_currency TEXT,
+      shop TEXT,
+      model TEXT,
+      overall_score INTEGER,
+      verdict TEXT,
       analysis_data TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
-    
+
+    CREATE INDEX IF NOT EXISTS idx_analyses_product_id ON analyses (product_id);
+    CREATE INDEX IF NOT EXISTS idx_analyses_created_at ON analyses (created_at DESC);
+
     -- Angles
     CREATE TABLE IF NOT EXISTS angles (
       id TEXT PRIMARY KEY,
